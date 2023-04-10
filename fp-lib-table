@@ -1,0 +1,4 @@
+
+(fp_lib_table
+  (lib (name "yakbak_outline")(type KiCad)(uri "$(KIPRJMOD)/yakbak_outline.pretty")(options "")(descr ""))
+)

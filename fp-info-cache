@@ -1,4 +1,4 @@
-21569394940116831
+21582843767872942
 Audio_Module
 Reverb_BTDR-1H
 Digital Reverberation Unit, http://www.belton.co.kr/inc/downfile.php?seq=17&file=pdf (footprint from http://www.uk-electronic.de/PDF/BTDR-1.pdf)
@@ -82914,6 +82914,13 @@ rotary encoder
 0
 7
 6
+Seeeduino XIAO KICAD
+Seeeduino XIAO-MOUDLE14P-2.54-21X17.8MM
+
+
+0
+20
+20
 Sensor
 Aosong_DHT11_5.5x12.0_P2.54mm
 Temperature and humidity module, http://akizukidenshi.com/download/ds/aosong/DHT11.pdf
@@ -90068,10 +90075,59 @@ varistor
 0
 2
 2
-footprints
+XIAO_ESP32C3_PCB
 MOUDLE14P-SMD-2.54-21X17.8MM
 
 
 0
 14
 14
+yakbak_outline
+B.Cu_g25
+
+
+0
+0
+0
+yakbak_outline
+B.Mask_g27
+
+
+0
+0
+0
+yakbak_outline
+B.SilkS_g29
+
+
+0
+0
+0
+yakbak_outline
+Dwgs.User_g37
+
+
+0
+0
+0
+yakbak_outline
+F.Cu_g31
+
+
+0
+0
+0
+yakbak_outline
+F.Mask_g33
+
+
+0
+0
+0
+yakbak_outline
+F.SilkS_g35
+
+
+0
+0
+0
