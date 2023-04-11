@@ -1,0 +1,6 @@
+Seeed Studio XIAO-ESP32-C3.step by Maurice Pannard
+https://grabcad.com/library/seeed-studio-xiao-esp32-c3-1
+max4466_mic_amp.STEP by Adrian Vacaru
+https://grabcad.com/library/max4466-mic-amp-1
+Adafruit Audio Amp 2130 by davidrmillar
+https://grabcad.com/library/adafruit-audio-amp-2130-1

@@ -1,4 +1,5 @@
-
 (fp_lib_table
-  (lib (name "yakbak_outline")(type KiCad)(uri "$(KIPRJMOD)/yakbak_outline.pretty")(options "")(descr ""))
+  (version 7)
+  (lib (name "yakbak_outline")(type "KiCad")(uri "$(KIPRJMOD)/yakbak_outline.pretty")(options "")(descr ""))
+  (lib (name "xiao ESP32C3_PCB")(type "KiCad")(uri "${KIPRJMOD}/xiao ESP32C3_PCB.pretty")(options "")(descr ""))
 )
