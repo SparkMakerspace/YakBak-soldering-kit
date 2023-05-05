@@ -2,13 +2,14 @@
 #include <SPIFFS.h>
 
 // Tweak these as desired
-#define SERIAL_EN true    // Disable when we're ready for "production"
-#define PWM_FREQ 40000    // This isn't exactly what it'll be, but that's okay.
-#define SAMPLE_FREQ 8000  // Input and output samples/second
-#define CLOCK_DIVIDER 80  // the APB clock should be running at 80MHz. This clock is used for the timer for the sample interrupt
+#define SERIAL_EN true      // Disable when we're ready for "production"
+#define PWM_FREQ 40000      // This isn't exactly what it'll be, but that's okay.
+#define SAMPLE_FREQ 8000    // Input and output samples/second
+#define CLOCK_DIVIDER 80    // the APB clock should be running at 80MHz. This clock is used for the timer for the sample interrupt
+#define FORMAT_SPIFFS false // only needs to happen once
 
 // don't change these ones
-#define COUNT_PER_SAMPLE APB_CLK_FREQ/CLOCK_DIVIDER/SAMPLE_FREQ // Just a pre-processor calculation to simplify runtime
+#define COUNT_PER_SAMPLE APB_CLK_FREQ / CLOCK_DIVIDER / SAMPLE_FREQ // Just a pre-processor calculation to simplify runtime
 
 uint32_t countPerSample = COUNT_PER_SAMPLE;
 uint8_t analogOut = 10;
@@ -16,7 +17,7 @@ uint8_t sayButton = 8;
 uint8_t playButton = 7;
 uint8_t amplifierShutdown = 9;
 uint8_t microphone = 0;
-hw_timer_t * timer = NULL;
+hw_timer_t *timer = NULL;
 volatile SemaphoreHandle_t timerSemaphore;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -24,6 +25,7 @@ portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 boolean sayPressed = false;
 boolean wasSayPressed = false;
 boolean sayJustPressed = false;
+boolean sayJustReleased = false;
 boolean playPressed = false;
 boolean wasPlayPressed = false;
 boolean playJustPressed = false;
@@ -34,116 +36,147 @@ uint16_t recordBufferSize;
 uint8_t playBuffer[2048];
 uint16_t playBufferSize;
 
+// used for SPIFFS formatting
+bool formatted = false;
+
 ///////////////////////////////////////////////////
 //  THIS SECTION IS FOR SPIFFS   //////////////////
 ///////////////////////////////////////////////////
 
-void listDir(fs::FS &fs, const char * dirname, uint8_t levels){
-    Serial.printf("Listing directory: %s\n", dirname);
+void listDir(fs::FS &fs, const char *dirname, uint8_t levels)
+{
+  Serial.printf("Listing directory: %s\n", dirname);
 
-    File root = fs.open(dirname);
-    if(!root){
-        Serial.println("Failed to open directory");
-        return;
-    }
-    if(!root.isDirectory()){
-        Serial.println("Not a directory");
-        return;
-    }
+  File root = fs.open(dirname);
+  if (!root)
+  {
+    Serial.println("Failed to open directory");
+    return;
+  }
+  if (!root.isDirectory())
+  {
+    Serial.println("Not a directory");
+    return;
+  }
 
-    File file = root.openNextFile();
-    while(file){
-        if(file.isDirectory()){
-            Serial.print("  DIR : ");
-            Serial.print (file.name());
-            time_t t= file.getLastWrite();
-            struct tm * tmstruct = localtime(&t);
-            Serial.printf("  LAST WRITE: %d-%02d-%02d %02d:%02d:%02d\n",(tmstruct->tm_year)+1900,( tmstruct->tm_mon)+1, tmstruct->tm_mday,tmstruct->tm_hour , tmstruct->tm_min, tmstruct->tm_sec);
-            if(levels){
-                listDir(fs, file.path(), levels -1);
-            }
-        } else {
-            Serial.print("  FILE: ");
-            Serial.print(file.name());
-            Serial.print("  SIZE: ");
-            Serial.print(file.size());
-            time_t t= file.getLastWrite();
-            struct tm * tmstruct = localtime(&t);
-            Serial.printf("  LAST WRITE: %d-%02d-%02d %02d:%02d:%02d\n",(tmstruct->tm_year)+1900,( tmstruct->tm_mon)+1, tmstruct->tm_mday,tmstruct->tm_hour , tmstruct->tm_min, tmstruct->tm_sec);
-        }
-        file = root.openNextFile();
+  File file = root.openNextFile();
+  while (file)
+  {
+    if (file.isDirectory())
+    {
+      Serial.print("  DIR : ");
+      Serial.print(file.name());
+      time_t t = file.getLastWrite();
+      struct tm *tmstruct = localtime(&t);
+      Serial.printf("  LAST WRITE: %d-%02d-%02d %02d:%02d:%02d\n", (tmstruct->tm_year) + 1900, (tmstruct->tm_mon) + 1, tmstruct->tm_mday, tmstruct->tm_hour, tmstruct->tm_min, tmstruct->tm_sec);
+      if (levels)
+      {
+        listDir(fs, file.path(), levels - 1);
+      }
     }
+    else
+    {
+      Serial.print("  FILE: ");
+      Serial.print(file.name());
+      Serial.print("  SIZE: ");
+      Serial.print(file.size());
+      time_t t = file.getLastWrite();
+      struct tm *tmstruct = localtime(&t);
+      Serial.printf("  LAST WRITE: %d-%02d-%02d %02d:%02d:%02d\n", (tmstruct->tm_year) + 1900, (tmstruct->tm_mon) + 1, tmstruct->tm_mday, tmstruct->tm_hour, tmstruct->tm_min, tmstruct->tm_sec);
+    }
+    file = root.openNextFile();
+  }
 }
 
-void readFile(fs::FS &fs, const char * path){
-    Serial.printf("Reading file: %s\n", path);
+void readFile(fs::FS &fs, const char *path)
+{
+  Serial.printf("Reading file: %s\n", path);
 
-    File file = fs.open(path);
-    if(!file){
-        Serial.println("Failed to open file for reading");
-        return;
-    }
-    while(file.available()){
-        Serial.write(file.read());
-    }
-    file.close();
+  File file = fs.open(path);
+  if (!file)
+  {
+    Serial.println("Failed to open file for reading");
+    return;
+  }
+  while (file.available())
+  {
+    Serial.write(file.read());
+  }
+  file.close();
 }
 
-void writeFile(fs::FS &fs, const char * path, const uint8_t * buffer){
-    Serial.printf("Writing file: %s\n", path);
+void writeFile(fs::FS &fs, const char *path, const uint8_t *buffer, const uint16_t buffsize)
+{
+  Serial.printf("Writing file: %s\n", path);
 
-    File file = fs.open(path, FILE_WRITE);
-    if(!file){
-        Serial.println("Failed to open file for writing");
-        return;
-    }
-    if(!file.write(buffer,sizeof(buffer)/sizeof(buffer[0]))) {
-        Serial.println("Write failed");
-    }
-    file.close();
+  File file = fs.open(path, FILE_WRITE);
+  if (!file)
+  {
+    Serial.println("Failed to open file for writing");
+    return;
+  }
+  if (!file.write(buffer, buffsize))
+  {
+    Serial.println("Write failed");
+  }
+  file.close();
 }
 
-void appendFile(fs::FS &fs, const char * path, const uint8_t * buffer){
-    Serial.printf("Appending to file: %s\n", path);
+void appendFile(fs::FS &fs, const char *path, const uint8_t *buffer)
+{
+  Serial.printf("Appending to file: %s\n", path);
 
-    File file = fs.open(path, FILE_APPEND);
-    if(!file){
-        Serial.println("Failed to open file for appending");
-        return;
-    }
-    if(!file.write(buffer,sizeof(buffer)/sizeof(buffer[0]))){
-        Serial.println("Append failed");
-    }
-    file.close();
+  File file = fs.open(path, FILE_APPEND);
+  if (!file)
+  {
+    Serial.println("Failed to open file for appending");
+    return;
+  }
+  if (!file.write(buffer, sizeof(buffer) / sizeof(buffer[0])))
+  {
+    Serial.println("Append failed");
+  }
+  file.close();
 }
 
-void deleteFile(fs::FS &fs, const char * path){
-    Serial.printf("Deleting file: %s\n", path);
-    if(fs.remove(path)){
-        Serial.println("File deleted");
-    } else {
-        Serial.println("Delete failed");
-    }
+void deleteFile(fs::FS &fs, const char *path)
+{
+  Serial.printf("Deleting file: %s\n", path);
+  if (fs.remove(path))
+  {
+    Serial.println("File deleted");
+  }
+  else
+  {
+    Serial.println("Delete failed");
+  }
 }
 
 /////////////////////////////////////////////////////////////////
 //   Ok. The SPIFFS section is over now.  ///////////////////////
 /////////////////////////////////////////////////////////////////
 
-
-void ARDUINO_ISR_ATTR onTimer(){
+void ARDUINO_ISR_ATTR onTimer()
+{
   // Increment the counter and set the time of ISR
   portENTER_CRITICAL_ISR(&timerMux);
-  // TODO: if say was JUST pressed, clear Preferences first
-  if (sayJustPressed) {
+  (SERIAL_EN)? Serial.printf("ISR!\n"):0;
+  // If say was JUST pressed, clear Preferences first
+  if (sayJustPressed)
+  {
+    (SERIAL_EN)? Serial.printf("Deleting audio file\n"):0;
     // delete the audio and clear the buffer
-    deleteFile(SPIFFS,"audio.wav");
+    deleteFile(SPIFFS, "/audio.wav");
     recordBufferSize = 0;
   }
-  if (sayPressed){
-
-  }
   // TODO: if say button is pressed, read ADC and write to end of Preferences
+  if (sayPressed)
+  {
+    recordBuffer[recordBufferSize] = analogRead(microphone);
+    (SERIAL_EN)? Serial.printf("Audio sample: %d, sample #: %d\n",recordBuffer[recordBufferSize],recordBufferSize):0;
+    recordBufferSize++;
+  }
+
   portEXIT_CRITICAL_ISR(&timerMux);
   // Give a semaphore that we can check in the loop
   xSemaphoreGiveFromISR(timerSemaphore, NULL);
@@ -164,18 +197,33 @@ void setup()
   pinMode(playButton, INPUT_PULLUP);
   pinMode(amplifierShutdown, OUTPUT);
 
-  (SERIAL_EN)? Serial.printf("timer count per interrupt firing: %d\n", countPerSample):0;
+  (SERIAL_EN) ? Serial.printf("timer count per interrupt firing: %d\n", countPerSample) : 0;
 
   // turn off the amplifier
   digitalWrite(amplifierShutdown, HIGH);
 
   // Initialize SPIFFS
-  if(!SPIFFS.begin(true)){
+  if (!SPIFFS.begin(true))
+  {
     Serial.println("SPIFFS mount Failed");
     return;
   }
+  if (FORMAT_SPIFFS)
+  {
+    formatted = SPIFFS.format();
+    if (formatted)
+    {
+      Serial.println("\n\nSuccess formatting");
+    }
+    else
+    {
+      Serial.println("\n\nError formatting");
+    }
+  }
 
-  analogSetAttenuation(ADC_ATTEN_DB_11);
+  // set up the ADC stuff
+  adcAttachPin(microphone);
+  analogSetAttenuation(ADC_11db);
   analogReadResolution(8);
 
   // Create semaphore to inform us when the timer has fired
@@ -186,11 +234,11 @@ void setup()
   // Print out the frequency via serial
   if (clockFreq == 0)
   {
-    (SERIAL_EN)? Serial.println("Could not set PWM clock frequency"):0;
+    (SERIAL_EN) ? Serial.println("Could not set PWM clock frequency") : 0;
   }
   else
   {
-    (SERIAL_EN)? Serial.printf("PWM clock frequency: %d\n", clockFreq):0;
+    (SERIAL_EN) ? Serial.printf("PWM clock frequency: %d\n", clockFreq) : 0;
   }
   // No output yet
   sigmaDeltaWrite(0, 0);
@@ -198,7 +246,7 @@ void setup()
   // Setup timer at the sample rate
   timer = timerBegin(0, CLOCK_DIVIDER, true);
   // attach an ISR
-  timerAttachInterrupt(timer, &onTimer, true);  
+  timerAttachInterrupt(timer, &onTimer, true);
   // Set alarm to call onTimer function every second (value in microseconds).
   // Repeat the alarm (third parameter)
   timerAlarmWrite(timer, countPerSample, true);
@@ -209,18 +257,32 @@ void setup()
 void loop()
 {
   // put your main code here, to run repeatedly:
-  if (xSemaphoreTake(timerSemaphore, 0) == pdTRUE){}
-  // TODO: check for button push
+
   portENTER_CRITICAL(&timerMux);
-    wasSayPressed = sayPressed;
-    sayPressed = !digitalRead(sayButton);
-    sayJustPressed = !wasSayPressed && sayPressed;
-    wasPlayPressed = playPressed;
-    playPressed = !digitalRead(playButton);
-    sayJustPressed = !wasPlayPressed && playPressed;
-    if (recordBuffer)
+  // button push states and edges
+  wasSayPressed = sayPressed;
+  sayPressed = !digitalRead(sayButton);
+  sayJustPressed = !wasSayPressed && sayPressed;
+  sayJustReleased = wasSayPressed && !sayPressed;
+  wasPlayPressed = playPressed;
+  playPressed = !digitalRead(playButton);
+  sayJustPressed = !wasPlayPressed && playPressed;
+  if (recordBufferSize >= 1024 || sayJustReleased)
+  {
+    (SERIAL_EN)? Serial.printf("Hold on - let me write this down.\nBuffer size: %d",recordBufferSize):0;
+    // writeFile(SPIFFS, "/audio.wav", recordBuffer, recordBufferSize);
+    if (SERIAL_EN)
+    {
+      Serial.printf("Audio data:\n");
+      for (int i = 0; i < recordBufferSize; i++)
+      {
+        Serial.printf("%d\n", recordBuffer[i]);
+      }
+    }
+    recordBufferSize = 0;
+  }
   portEXIT_CRITICAL(&timerMux);
-  // TODO: if say is being held down, record mic value to Preferences every sample rate
-  // TODO: if a high->low play transition occurs, read every sample in Preferences to the 
+  // TODO: if a high->low play transition occurs, read every sample in Preferences to the
   //       sigmaDeltaWrite function every sample rate
+  delayMicroseconds(250);
 }
