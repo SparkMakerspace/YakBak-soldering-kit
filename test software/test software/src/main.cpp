@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <Preferences.h>
+#include <SPIFFS.h>
 
 // Tweak these as desired
 #define SERIAL_EN true    // Disable when we're ready for "production"
@@ -28,14 +28,122 @@ boolean playPressed = false;
 boolean wasPlayPressed = false;
 boolean playJustPressed = false;
 
+// used to store data in memory temporarily
+uint8_t recordBuffer[2048];
+uint16_t recordBufferSize;
+uint8_t playBuffer[2048];
+uint16_t playBufferSize;
+
+///////////////////////////////////////////////////
+//  THIS SECTION IS FOR SPIFFS   //////////////////
+///////////////////////////////////////////////////
+
+void listDir(fs::FS &fs, const char * dirname, uint8_t levels){
+    Serial.printf("Listing directory: %s\n", dirname);
+
+    File root = fs.open(dirname);
+    if(!root){
+        Serial.println("Failed to open directory");
+        return;
+    }
+    if(!root.isDirectory()){
+        Serial.println("Not a directory");
+        return;
+    }
+
+    File file = root.openNextFile();
+    while(file){
+        if(file.isDirectory()){
+            Serial.print("  DIR : ");
+            Serial.print (file.name());
+            time_t t= file.getLastWrite();
+            struct tm * tmstruct = localtime(&t);
+            Serial.printf("  LAST WRITE: %d-%02d-%02d %02d:%02d:%02d\n",(tmstruct->tm_year)+1900,( tmstruct->tm_mon)+1, tmstruct->tm_mday,tmstruct->tm_hour , tmstruct->tm_min, tmstruct->tm_sec);
+            if(levels){
+                listDir(fs, file.path(), levels -1);
+            }
+        } else {
+            Serial.print("  FILE: ");
+            Serial.print(file.name());
+            Serial.print("  SIZE: ");
+            Serial.print(file.size());
+            time_t t= file.getLastWrite();
+            struct tm * tmstruct = localtime(&t);
+            Serial.printf("  LAST WRITE: %d-%02d-%02d %02d:%02d:%02d\n",(tmstruct->tm_year)+1900,( tmstruct->tm_mon)+1, tmstruct->tm_mday,tmstruct->tm_hour , tmstruct->tm_min, tmstruct->tm_sec);
+        }
+        file = root.openNextFile();
+    }
+}
+
+void readFile(fs::FS &fs, const char * path){
+    Serial.printf("Reading file: %s\n", path);
+
+    File file = fs.open(path);
+    if(!file){
+        Serial.println("Failed to open file for reading");
+        return;
+    }
+    while(file.available()){
+        Serial.write(file.read());
+    }
+    file.close();
+}
+
+void writeFile(fs::FS &fs, const char * path, const uint8_t * buffer){
+    Serial.printf("Writing file: %s\n", path);
+
+    File file = fs.open(path, FILE_WRITE);
+    if(!file){
+        Serial.println("Failed to open file for writing");
+        return;
+    }
+    if(!file.write(buffer,sizeof(buffer)/sizeof(buffer[0]))) {
+        Serial.println("Write failed");
+    }
+    file.close();
+}
+
+void appendFile(fs::FS &fs, const char * path, const uint8_t * buffer){
+    Serial.printf("Appending to file: %s\n", path);
+
+    File file = fs.open(path, FILE_APPEND);
+    if(!file){
+        Serial.println("Failed to open file for appending");
+        return;
+    }
+    if(!file.write(buffer,sizeof(buffer)/sizeof(buffer[0]))){
+        Serial.println("Append failed");
+    }
+    file.close();
+}
+
+void deleteFile(fs::FS &fs, const char * path){
+    Serial.printf("Deleting file: %s\n", path);
+    if(fs.remove(path)){
+        Serial.println("File deleted");
+    } else {
+        Serial.println("Delete failed");
+    }
+}
+
+/////////////////////////////////////////////////////////////////
+//   Ok. The SPIFFS section is over now.  ///////////////////////
+/////////////////////////////////////////////////////////////////
+
+
 void ARDUINO_ISR_ATTR onTimer(){
   // Increment the counter and set the time of ISR
   portENTER_CRITICAL_ISR(&timerMux);
-  // TODO: if say was JUST pressed, clear SPIFFS first
+  // TODO: if say was JUST pressed, clear Preferences first
   if (sayJustPressed) {
-    // TODO: clear the SPIFFS file
+    // delete the audio and clear the buffer
+    deleteFile(SPIFFS,"audio.wav");
+    recordBufferSize = 0;
   }
-  // TODO: if say button is pressed, read ADC and write to end of SPIFFS
+  if (sayPressed){
+
+  }
+  // TODO: if say button is pressed, read ADC and write to end of Preferences
   portEXIT_CRITICAL_ISR(&timerMux);
   // Give a semaphore that we can check in the loop
   xSemaphoreGiveFromISR(timerSemaphore, NULL);
@@ -61,9 +169,14 @@ void setup()
   // turn off the amplifier
   digitalWrite(amplifierShutdown, HIGH);
 
-  Preferences preferences = Preferences();
-  preferences.begin("nvs");
-  (SERIAL_EN)? Serial.printf("Free entries in preferences space: %d\n", preferences.freeEntries()):0;
+  // Initialize SPIFFS
+  if(!SPIFFS.begin(true)){
+    Serial.println("SPIFFS mount Failed");
+    return;
+  }
+
+  analogSetAttenuation(ADC_ATTEN_DB_11);
+  analogReadResolution(8);
 
   // Create semaphore to inform us when the timer has fired
   timerSemaphore = xSemaphoreCreateBinary();
@@ -105,8 +218,9 @@ void loop()
     wasPlayPressed = playPressed;
     playPressed = !digitalRead(playButton);
     sayJustPressed = !wasPlayPressed && playPressed;
+    if (recordBuffer)
   portEXIT_CRITICAL(&timerMux);
-  // TODO: if say is being held down, record mic value to SPIFFS every sample rate
-  // TODO: if a high->low play transition occurs, read every sample in SPIFFS to the 
+  // TODO: if say is being held down, record mic value to Preferences every sample rate
+  // TODO: if a high->low play transition occurs, read every sample in Preferences to the 
   //       sigmaDeltaWrite function every sample rate
 }
