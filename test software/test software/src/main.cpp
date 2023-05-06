@@ -2,15 +2,15 @@
 #include <SPIFFS.h>
 
 // Tweak these as desired
-#define SERIAL_EN false       // Disable when we're ready for "production"
-#define PWM_FREQ 80000        // This isn't exactly what it'll be, but that's totally fine.
-#define SAMPLE_FREQ 8000      // Input and output samples/second
-#define CLOCK_DIVIDER 80      // the APB clock (used to time stuff) should be running at 80MHz. This divider lets us use smaller numbers :)
-#define SAMPLE_COUNT_FUDGE  0 // ehhh nobody's perfect. Our sample rate maybe slower than ideal and this might help
-#define FORMAT_SPIFFS false   // only needs to happen once ever
+#define SERIAL_EN false      // Disable when we're ready for "production"
+#define PWM_FREQ 80000       // This isn't exactly what it'll be, but that's totally fine.
+#define SAMPLE_FREQ 8000     // Input and output samples/second
+#define CLOCK_DIVIDER 80     // the APB clock (used to time stuff) should be running at 80MHz. This divider lets us use smaller numbers :)
+#define SAMPLE_COUNT_FUDGE 0 // ehhh nobody's perfect. Our sample rate maybe slower than ideal and this might help
 
-// don't change this one
+// don't change these ones
 #define COUNT_PER_SAMPLE (APB_CLK_FREQ / CLOCK_DIVIDER / SAMPLE_FREQ) + SAMPLE_COUNT_FUDGE // Just a pre-processor calculation to simplify runtime
+#define FORMAT_SPIFFS_IF_FAILED true
 
 // Play state variable enumerations - yes, this is dumb, but whatever
 #define PLAY_IDLE 0
@@ -194,22 +194,10 @@ void setup()
   digitalWrite(amplifierShutdown, LOW);
 
   // Initialize SPIFFS
-  if (!SPIFFS.begin(true))
+  if (!SPIFFS.begin(FORMAT_SPIFFS_IF_FAILED))
   {
-    Serial.println("SPIFFS mount Failed");
+    Serial.println("SPIFFS Mount Failed");
     return;
-  }
-  if (FORMAT_SPIFFS)
-  {
-    formatted = SPIFFS.format();
-    if (formatted)
-    {
-      Serial.println("\n\nSuccess formatting");
-    }
-    else
-    {
-      Serial.println("\n\nError formatting");
-    }
   }
 
   // set up the ADC stuff
@@ -336,14 +324,14 @@ void loop()
       // read one byte from the file
       static char playBuffer;
       playFile.readBytes(&playBuffer, 1);
-      (SERIAL_EN) ? Serial.printf("%d\t",playBuffer) : 0;
+      (SERIAL_EN) ? Serial.printf("%d\t", playBuffer) : 0;
       // and write that byte to sigmaDelta
       sigmaDeltaWrite(0, (uint8_t)playBuffer);
     }
     else
     {
       // stop outputting
-      sigmaDeltaWrite(0,0);
+      sigmaDeltaWrite(0, 0);
       // state = finishedPlaying if no file left
       playState = FINISHED_PLAYING;
     }
