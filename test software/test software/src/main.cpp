@@ -6,7 +6,7 @@
 #define PWM_FREQ 80000       // This isn't exactly what it'll be, but that's totally fine.
 #define SAMPLE_FREQ 8000     // Input and output samples/second
 #define CLOCK_DIVIDER 80     // the APB clock (used to time stuff) should be running at 80MHz. This divider lets us use smaller numbers :)
-#define SAMPLE_COUNT_FUDGE 0 // ehhh nobody's perfect. Our sample rate maybe slower than ideal and this might help
+#define SAMPLE_COUNT_FUDGE 0 // ehhh nobody's perfect. Our sample rate might need this (it's in counts so use numbers like -3 or -5 if needed)
 
 // don't change these ones
 #define COUNT_PER_SAMPLE (APB_CLK_FREQ / CLOCK_DIVIDER / SAMPLE_FREQ) + SAMPLE_COUNT_FUDGE // Just a pre-processor calculation to simplify runtime
